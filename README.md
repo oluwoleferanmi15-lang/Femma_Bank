@@ -1,16 +1,16 @@
-markdown# Femma Bank — Digital Banking Backend System
+# Femma Bank — Digital Banking Backend System
 
-A production-grade RESTful banking API built with Node.js, Express, and MongoDB, 
-integrated with the NibssByPhoenix financial infrastructure for real-time 
+A production-grade RESTful banking API built with Node.js, Express, and MongoDB,
+integrated with the NibssByPhoenix financial infrastructure for real-time
 identity verification and core banking operations.
 
 ---
 
 ## Overview
 
-Femma Bank is a core banking backend system that supports the full customer 
-lifecycle — from identity verification and onboarding to account management, 
-funds transfer, and transaction tracking. The system enforces strict data 
+Femma Bank is a core banking backend system that supports the full customer
+lifecycle — from identity verification and onboarding to account management,
+funds transfer, and transaction tracking. The system enforces strict data
 isolation to ensure no customer can access another customer's financial data.
 
 ---
@@ -60,23 +60,13 @@ isolation to ensure no customer can access another customer's financial data.
 - NibssByPhoenix API credentials
 
 ### Installation
-
-```bash
-# Clone the repository
 git clone https://github.com/oluwoleferanmi15-lang/Femma_Bank.git
-
-# Navigate into the project
 cd Femma_Bank
-
-# Install dependencies
 npm install
-```
 
 ### Environment Variables
 
 Create a `.env` file in the root directory:
-
-```env
 PORT=5000
 MONGO_URI=mongodb://localhost:27017/fembank
 JWT_SECRET=your_jwt_secret
@@ -85,15 +75,11 @@ API_SECRET=your_nibssbyPhoenix_api_secret
 BANK_CODE=822
 BANK_NAME=FEM Bank
 BASE_URL=https://nibssbyphoenix.onrender.com
-```
 
 ### Run the Server
-
-```bash
 node server.js
-```
 
-Server will start on `http://localhost:5000`
+Server will start on http://localhost:5000
 
 ---
 
@@ -103,27 +89,9 @@ Server will start on `http://localhost:5000`
 
 #### Register Customer
 POST /api/auth/register
-```json
-{
-  "firstName": "John",
-  "lastName": "Doe",
-  "email": "john@example.com",
-  "password": "password123",
-  "phone": "08012345678",
-  "kycType": "bvn",
-  "kycID": "12345678901",
-  "dob": "1995-06-15"
-}
-```
 
 #### Login
 POST /api/auth/login
-```json
-{
-  "email": "john@example.com",
-  "password": "password123"
-}
-```
 
 ---
 
@@ -144,12 +112,6 @@ GET /api/account/transactions
 
 #### Transfer Funds
 POST /api/transfer
-```json
-{
-  "toAccount": "8224215840",
-  "amount": 1000
-}
-```
 
 #### Check Transaction Status
 GET /api/transfer/:reference
@@ -168,7 +130,6 @@ GET /api/transfer/:reference
 ## Testing
 
 A Postman collection is included in the repository for testing all endpoints.
-
 Import `FemmaBank.postman_collection.json` into Postman to get started.
 
 ---
@@ -185,6 +146,6 @@ Import `FemmaBank.postman_collection.json` into Postman to get started.
 
 ## Author
 
-Oluwole Feranmi  
-Backend Engineering Student — TS Academy  
+Oluwole Feranmi
+Backend Engineering Student — TS Academy
 April 2026
