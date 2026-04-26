@@ -18,6 +18,10 @@
   <img src="https://img.shields.io/badge/status-active-success?style=flat-square" />
 </p>
 
+<p align="center">
+  🌐 <b>Live API:</b> <a href="https://femma-bank.vercel.app">https://femma-bank.vercel.app</a>
+</p>
+
 ---
 
 ## 📋 Overview
@@ -94,7 +98,7 @@ Create a `.env` file in the root directory:
 
 ```env
 PORT=5000
-MONGO_URI=mongodb://localhost:27017/fembank
+MONGO_URI=your_mongodb_atlas_uri
 JWT_SECRET=your_jwt_secret
 API_KEY=your_nibssbyPhoenix_api_key
 API_SECRET=your_nibssbyPhoenix_api_secret
@@ -162,6 +166,7 @@ Import `FemmaBank.postman_collection.json` into Postman to get started.
 | 🏛️ Bank Name | FEM Bank |
 | 🔢 Bank Code | 822 |
 | 🔗 Infrastructure | NibssByPhoenix |
+| 🌐 Live URL | https://femma-bank.vercel.app |
 
 ---
 
