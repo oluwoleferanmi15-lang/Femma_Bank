@@ -4,9 +4,9 @@ const axios = require('axios');
 const Customer = require('../models/Customer');
 const Transaction = require('../models/Transaction');
 const protect = require('../middleware/protect');
+const { sendDebitEmail, sendCreditEmail } = require('../config/email');
 
 const BASE_URL = process.env.BASE_URL;
-
 
 const getNibbsToken = async () => {
   const res = await axios.post(`${BASE_URL}/api/auth/token`, {
@@ -16,53 +16,46 @@ const getNibbsToken = async () => {
   return res.data.token;
 };
 
-
+// @route  POST /api/transfer
 router.post('/', protect, async (req, res) => {
   try {
     const { toAccount, amount } = req.body;
 
-    
     if (!req.customer.accountNumber) {
       return res.status(400).json({ message: 'You do not have an account' });
     }
 
-    
     if (req.customer.balance < amount) {
       return res.status(400).json({ message: 'Insufficient balance' });
     }
 
-   
     if (req.customer.accountNumber === toAccount) {
       return res.status(400).json({ message: 'Cannot transfer to your own account' });
     }
 
     const nibbsToken = await getNibbsToken();
 
-    
     const transferRes = await axios.post(
       `${BASE_URL}/api/transfer`,
-      {
-        from: req.customer.accountNumber,
-        to: toAccount,
-        amount
-      },
+      { from: req.customer.accountNumber, to: toAccount, amount },
       { headers: { Authorization: `Bearer ${nibbsToken}` } }
     );
 
     const { reference, status } = transferRes.data;
 
-   
+    // Update sender balance
     await Customer.findByIdAndUpdate(req.customer._id, {
       $inc: { balance: -amount }
     });
 
-    
-    await Customer.findOneAndUpdate(
+    // Update receiver balance if in our bank
+    const receiver = await Customer.findOneAndUpdate(
       { accountNumber: toAccount },
-      { $inc: { balance: amount } }
+      { $inc: { balance: amount } },
+      { new: true }
     );
 
-    
+    // Save transaction
     await Transaction.create({
       reference,
       senderAccount: req.customer.accountNumber,
@@ -71,6 +64,26 @@ router.post('/', protect, async (req, res) => {
       status,
       customerId: req.customer._id
     });
+
+    // Send debit email to sender
+    await sendDebitEmail(
+      req.customer.email,
+      req.customer.accountName,
+      amount,
+      toAccount,
+      reference
+    );
+
+    // Send credit email to receiver if in our bank
+    if (receiver) {
+      await sendCreditEmail(
+        receiver.email,
+        receiver.accountName,
+        amount,
+        req.customer.accountNumber,
+        reference
+      );
+    }
 
     res.json({
       message: 'Transfer successful',
@@ -83,13 +96,13 @@ router.post('/', protect, async (req, res) => {
 
   } catch (error) {
     console.log('Transfer error:', error.response?.data || error.message);
-    res.status(500).json({ 
-      message: error.response?.data?.message || 'Transfer failed' 
+    res.status(500).json({
+      message: error.response?.data?.message || 'Transfer failed'
     });
   }
 });
 
-
+// @route  GET /api/transfer/:reference
 router.get('/:reference', protect, async (req, res) => {
   try {
     const nibbsToken = await getNibbsToken();
@@ -97,9 +110,7 @@ router.get('/:reference', protect, async (req, res) => {
       `${BASE_URL}/api/transaction/${req.params.reference}`,
       { headers: { Authorization: `Bearer ${nibbsToken}` } }
     );
-
     res.json(response.data);
-
   } catch (error) {
     res.status(500).json({ message: 'Could not fetch transaction' });
   }

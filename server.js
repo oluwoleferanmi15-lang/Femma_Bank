@@ -5,21 +5,22 @@ const connectDB = require('./config/db');
 
 dotenv.config();
 
-// Connect to MongoDB
 connectDB();
 
 const app = express();
 
-// Middleware
-app.use(cors());
+app.use(cors({
+  origin: ['https://fem-bank.vercel.app', 'http://localhost:5173'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
 
-// Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/account', require('./routes/account'));
 app.use('/api/transfer', require('./routes/transfer'));
 
-// Default route
 app.get('/', (req, res) => {
   res.json({ message: 'Welcome to FEM Bank API 🏦' });
 });
