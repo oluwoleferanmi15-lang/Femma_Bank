@@ -1,133 +1,313 @@
-const nodemailer = require('nodemailer');
+const express = require('express');
+const router = express.Router();
+const jwt = require('jsonwebtoken');
+const axios = require('axios');
+const bcrypt = require('bcryptjs');
+const Customer = require('../models/Customer');
+const {
+  sendWelcomeEmail,
+  sendOTPEmail,
+  sendForgotPasswordEmail
+} = require('../config/email');
 
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
+const BASE_URL = process.env.BASE_URL;
+
+const generateToken = (id) => {
+  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '24h' });
+};
+
+const getNibbsToken = async () => {
+  const res = await axios.post(`${BASE_URL}/api/auth/token`, {
+    apiKey: process.env.API_KEY,
+    apiSecret: process.env.API_SECRET
+  });
+  return res.data.token;
+};
+
+// Generate 6-digit OTP
+const generateOTP = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+// Calculate age
+const calculateAge = (dob) => {
+  const today = new Date();
+  const birthDate = new Date(dob);
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
+};
+
+// @route  POST /api/auth/send-otp
+// @desc   Send OTP to email before registration
+router.post('/send-otp', async (req, res) => {
+  try {
+    const { email, firstName } = req.body;
+
+    // Check if email already exists
+    const existing = await Customer.findOne({ email });
+    if (existing) {
+      return res.status(400).json({ message: 'Email already registered' });
+    }
+
+    const otp = generateOTP();
+    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // Save OTP temporarily — create a temp record or update if exists
+    await Customer.findOneAndUpdate(
+      { email },
+      { email, otp, otpExpiry, firstName },
+      { upsert: true, new: true }
+    );
+
+    // Send OTP email
+    await sendOTPEmail(email, firstName, otp);
+
+    res.json({ message: 'OTP sent to your email' });
+
+  } catch (error) {
+    console.log('Send OTP error:', error.message);
+    res.status(500).json({ message: 'Failed to send OTP' });
   }
 });
 
-const sendWelcomeEmail = async (email, name, accountNumber) => {
+// @route  POST /api/auth/verify-otp
+// @desc   Verify OTP
+router.post('/verify-otp', async (req, res) => {
   try {
-    await transporter.sendMail({
-      from: `"FEM Bank" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: 'Welcome to FEM Bank! 🏦',
-      html: `
-        <div style="background:#0A0A0A;padding:40px;font-family:monospace;color:#FFD700;">
-          <h1 style="color:#FFD700;letter-spacing:4px;">🏦 FEM BANK</h1>
-          <hr style="border-color:#FFD700;"/>
-          <p style="color:#00A86B;font-size:16px;">Dear ${name},</p>
-          <p style="color:#ffffff;">Welcome to FEM Bank! Your account has been created successfully.</p>
-          <div style="background:#0B3D2E;border:1px solid #FFD700;padding:20px;margin:20px 0;">
-            <p style="color:#B8960C;">ACCOUNT_NUMBER :: <strong style="color:#FFD700;">${accountNumber}</strong></p>
-            <p style="color:#B8960C;">BANK_NAME :: <strong style="color:#FFD700;">FEM BANK</strong></p>
-            <p style="color:#B8960C;">BANK_CODE :: <strong style="color:#FFD700;">822</strong></p>
-          </div>
-          <p style="color:#444;">Keep your account details safe and never share your password.</p>
-          <hr style="border-color:#333;"/>
-          <p style="color:#333;font-size:12px;">FEM BANK © 2026 — POWERED BY NIBSSBYPHOENIX</p>
-        </div>
-      `
-    });
-    console.log('✅ Welcome email sent to:', email);
-  } catch (error) {
-    console.log('❌ Welcome email failed:', error.message);
-  }
-};
+    const { email, otp } = req.body;
 
-const sendDebitEmail = async (email, name, amount, toAccount, reference) => {
+    const customer = await Customer.findOne({ email });
+    if (!customer) {
+      return res.status(400).json({ message: 'Email not found' });
+    }
+
+    if (customer.otp !== otp) {
+      return res.status(400).json({ message: 'Invalid OTP' });
+    }
+
+    if (new Date() > customer.otpExpiry) {
+      return res.status(400).json({ message: 'OTP has expired' });
+    }
+
+    // Clear OTP
+    await Customer.findOneAndUpdate({ email }, { otp: null, otpExpiry: null });
+
+    res.json({ message: 'OTP verified successfully' });
+
+  } catch (error) {
+    console.log('Verify OTP error:', error.message);
+    res.status(500).json({ message: 'OTP verification failed' });
+  }
+});
+
+// @route  POST /api/auth/register
+router.post('/register', async (req, res) => {
   try {
-    await transporter.sendMail({
-      from: `"FEM Bank" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: `Debit Alert — ₦${Number(amount).toLocaleString()} sent`,
-      html: `
-        <div style="background:#0A0A0A;padding:40px;font-family:monospace;color:#FFD700;">
-          <h1 style="color:#FFD700;letter-spacing:4px;">🏦 FEM BANK</h1>
-          <hr style="border-color:#FF4444;"/>
-          <p style="color:#FF4444;font-size:20px;">▼ DEBIT ALERT</p>
-          <p style="color:#00A86B;">Dear ${name},</p>
-          <p style="color:#ffffff;">A debit transaction has been made on your account.</p>
-          <div style="background:#0B3D2E;border:1px solid #FF4444;padding:20px;margin:20px 0;">
-            <p style="color:#B8960C;">AMOUNT :: <strong style="color:#FF4444;">-₦${Number(amount).toLocaleString()}</strong></p>
-            <p style="color:#B8960C;">TO_ACCOUNT :: <strong style="color:#FFD700;">${toAccount}</strong></p>
-            <p style="color:#B8960C;">REFERENCE :: <strong style="color:#FFD700;">${reference}</strong></p>
-            <p style="color:#B8960C;">DATE :: <strong style="color:#FFD700;">${new Date().toLocaleString()}</strong></p>
-          </div>
-          <p style="color:#444;">If you did not initiate this transaction, contact us immediately.</p>
-          <hr style="border-color:#333;"/>
-          <p style="color:#333;font-size:12px;">FEM BANK © 2026</p>
-        </div>
-      `
-    });
-    console.log('✅ Debit email sent to:', email);
-  } catch (error) {
-    console.log('❌ Debit email failed:', error.message);
-  }
-};
+    const { firstName, lastName, email, password, phone, kycType, kycID, dob } = req.body;
 
-const sendCreditEmail = async (email, name, amount, fromAccount, reference) => {
+    // Validate age — must be 18+
+    const age = calculateAge(dob);
+    if (age < 18) {
+      return res.status(400).json({ message: 'You must be at least 18 years old to open an account' });
+    }
+
+    // Validate password strength
+    const passwordRegex = /^(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[!@#$%^&*]).{8,}$/;
+    if (!passwordRegex.test(password)) {
+      return res.status(400).json({
+        message: 'Password must be at least 8 characters with letters, numbers and special characters'
+      });
+    }
+
+    // Validate BVN/NIN length
+    if (kycID.length !== 11) {
+      return res.status(400).json({ message: `${kycType.toUpperCase()} must be exactly 11 digits` });
+    }
+
+    // Validate phone number
+    if (phone.length !== 10) {
+      return res.status(400).json({ message: 'Phone number must be 10 digits after +234' });
+    }
+
+    // Check if customer already exists
+    const existing = await Customer.findOne({ email, accountNumber: { $ne: null } });
+    if (existing) {
+      return res.status(400).json({ message: 'Customer already exists' });
+    }
+
+    const nibbsToken = await getNibbsToken();
+    const headers = { Authorization: `Bearer ${nibbsToken}` };
+    const fullPhone = `0${phone}`;
+
+    // Insert BVN or NIN
+    try {
+      if (kycType === 'bvn') {
+        await axios.post(`${BASE_URL}/api/insertBvn`, {
+          bvn: kycID, firstName, lastName, dob, phone: fullPhone
+        }, { headers });
+      } else if (kycType === 'nin') {
+        await axios.post(`${BASE_URL}/api/insertNin`, {
+          nin: kycID, firstName, lastName, dob, phone: fullPhone
+        }, { headers });
+      }
+    } catch (insertError) {
+      console.log('Insert note:', insertError.response?.data?.message);
+    }
+
+    // Validate BVN or NIN
+    let validateRes;
+    if (kycType === 'bvn') {
+      validateRes = await axios.post(`${BASE_URL}/api/validateBvn`, { bvn: kycID }, { headers });
+    } else {
+      validateRes = await axios.post(`${BASE_URL}/api/validateNin`, { nin: kycID }, { headers });
+    }
+
+    if (!validateRes.data.success) {
+      return res.status(400).json({ message: 'KYC validation failed' });
+    }
+
+    // Create account on NibssByPhoenix
+    const accountRes = await axios.post(`${BASE_URL}/api/account/create`, {
+      kycType, kycID, dob
+    }, { headers });
+
+    const { accountNumber, accountName, balance } = accountRes.data.account;
+
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Save customer to MongoDB
+    const customer = await Customer.findOneAndUpdate(
+      { email },
+      {
+        firstName, lastName, email,
+        password: hashedPassword,
+        phone: fullPhone, kycType, kycID, dob,
+        isVerified: true,
+        accountNumber, accountName, balance,
+        loginAttempts: 0,
+        isLocked: false
+      },
+      { upsert: true, new: true }
+    );
+
+    // Send welcome email
+    await sendWelcomeEmail(email, accountName, accountNumber);
+
+    res.status(201).json({
+      message: 'Customer registered successfully',
+      token: generateToken(customer._id),
+      customer: {
+        name: accountName,
+        email: customer.email,
+        accountNumber,
+        balance
+      }
+    });
+
+  } catch (error) {
+    console.log('Register error:', error.response?.data || error.message);
+    res.status(500).json({
+      message: error.response?.data?.message || error.message || 'Registration failed'
+    });
+  }
+});
+
+// @route  POST /api/auth/login
+router.post('/login', async (req, res) => {
   try {
-    await transporter.sendMail({
-      from: `"FEM Bank" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: `Credit Alert — ₦${Number(amount).toLocaleString()} received`,
-      html: `
-        <div style="background:#0A0A0A;padding:40px;font-family:monospace;color:#FFD700;">
-          <h1 style="color:#FFD700;letter-spacing:4px;">🏦 FEM BANK</h1>
-          <hr style="border-color:#00A86B;"/>
-          <p style="color:#00A86B;font-size:20px;">▲ CREDIT ALERT</p>
-          <p style="color:#00A86B;">Dear ${name},</p>
-          <p style="color:#ffffff;">Your account has been credited.</p>
-          <div style="background:#0B3D2E;border:1px solid #00A86B;padding:20px;margin:20px 0;">
-            <p style="color:#B8960C;">AMOUNT :: <strong style="color:#00A86B;">+₦${Number(amount).toLocaleString()}</strong></p>
-            <p style="color:#B8960C;">FROM_ACCOUNT :: <strong style="color:#FFD700;">${fromAccount}</strong></p>
-            <p style="color:#B8960C;">REFERENCE :: <strong style="color:#FFD700;">${reference}</strong></p>
-            <p style="color:#B8960C;">DATE :: <strong style="color:#FFD700;">${new Date().toLocaleString()}</strong></p>
-          </div>
-          <hr style="border-color:#333;"/>
-          <p style="color:#333;font-size:12px;">FEM BANK © 2026</p>
-        </div>
-      `
-    });
-    console.log('✅ Credit email sent to:', email);
-  } catch (error) {
-    console.log('❌ Credit email failed:', error.message);
-  }
-};
+    const { email, password } = req.body;
 
-const sendForgotPasswordEmail = async (email, name, newPassword) => {
+    const customer = await Customer.findOne({ email });
+    if (!customer || !customer.accountNumber) {
+      return res.status(400).json({ message: 'Invalid credentials' });
+    }
+
+    // Check if account is locked
+    if (customer.isLocked) {
+      return res.status(400).json({
+        message: 'Account locked. Please reset your password.',
+        isLocked: true
+      });
+    }
+
+    const isMatch = await bcrypt.compare(password, customer.password);
+    if (!isMatch) {
+      // Increment login attempts
+      const attempts = customer.loginAttempts + 1;
+      const isLocked = attempts >= 3;
+
+      await Customer.findByIdAndUpdate(customer._id, {
+        loginAttempts: attempts,
+        isLocked
+      });
+
+      return res.status(400).json({
+        message: 'Invalid credentials',
+        attemptsLeft: 3 - attempts,
+        isLocked
+      });
+    }
+
+    // Reset login attempts on success
+    await Customer.findByIdAndUpdate(customer._id, {
+      loginAttempts: 0,
+      isLocked: false
+    });
+
+    res.json({
+      message: 'Login successful',
+      token: generateToken(customer._id),
+      customer: {
+        name: customer.accountName,
+        email: customer.email,
+        accountNumber: customer.accountNumber,
+        balance: customer.balance
+      }
+    });
+
+  } catch (error) {
+    console.log('Login error:', error.message);
+    res.status(500).json({ message: 'Login failed' });
+  }
+});
+
+// @route  POST /api/auth/forgot-password
+router.post('/forgot-password', async (req, res) => {
   try {
-    await transporter.sendMail({
-      from: `"FEM Bank" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: 'FEM Bank — Password Reset',
-      html: `
-        <div style="background:#0A0A0A;padding:40px;font-family:monospace;color:#FFD700;">
-          <h1 style="color:#FFD700;letter-spacing:4px;">🏦 FEM BANK</h1>
-          <hr style="border-color:#FFD700;"/>
-          <p style="color:#00A86B;">Dear ${name},</p>
-          <p style="color:#ffffff;">Your password has been reset successfully.</p>
-          <div style="background:#0B3D2E;border:1px solid #FFD700;padding:20px;margin:20px 0;">
-            <p style="color:#B8960C;">NEW_PASSWORD :: <strong style="color:#FFD700;">${newPassword}</strong></p>
-          </div>
-          <p style="color:#FF4444;">Please login and change your password immediately.</p>
-          <hr style="border-color:#333;"/>
-          <p style="color:#333;font-size:12px;">FEM BANK © 2026</p>
-        </div>
-      `
-    });
-    console.log('✅ Password reset email sent to:', email);
-  } catch (error) {
-    console.log('❌ Password reset email failed:', error.message);
-  }
-};
+    const { email } = req.body;
 
-module.exports = {
-  sendWelcomeEmail,
-  sendDebitEmail,
-  sendCreditEmail,
-  sendForgotPasswordEmail
-};
+    const customer = await Customer.findOne({ email });
+    if (!customer) {
+      return res.status(400).json({ message: 'Email not found' });
+    }
+
+    // Generate new password
+    const newPassword = Math.random().toString(36).slice(-8) + '!1A';
+
+    // Hash and save
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+    await Customer.findByIdAndUpdate(customer._id, {
+      password: hashedPassword,
+      loginAttempts: 0,
+      isLocked: false
+    });
+
+    // Send email
+    await sendForgotPasswordEmail(email, customer.accountName, newPassword);
+
+    res.json({ message: 'New password sent to your email' });
+
+  } catch (error) {
+    console.log('Forgot password error:', error.message);
+    res.status(500).json({ message: 'Password reset failed' });
+  }
+});
+
+module.exports = router;

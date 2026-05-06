@@ -14,8 +14,11 @@ const customerSchema = new mongoose.Schema({
   accountNumber: { type: String, default: null },
   accountName: { type: String, default: null },
   balance: { type: Number, default: 0 },
+  loginAttempts: { type: Number, default: 0 },
+  isLocked: { type: Boolean, default: false },
+  otp: { type: String, default: null },
+  otpExpiry: { type: Date, default: null },
 }, { timestamps: true });
-
 
 customerSchema.methods.matchPassword = async function(enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);

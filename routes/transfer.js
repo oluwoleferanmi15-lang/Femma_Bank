@@ -65,7 +65,7 @@ router.post('/', protect, async (req, res) => {
       customerId: req.customer._id
     });
 
-    // Send debit email to sender
+    // Send debit email
     await sendDebitEmail(
       req.customer.email,
       req.customer.accountName,

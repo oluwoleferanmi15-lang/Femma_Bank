@@ -37,6 +37,34 @@ const sendWelcomeEmail = async (email, name, accountNumber) => {
   }
 };
 
+const sendOTPEmail = async (email, name, otp) => {
+  try {
+    await transporter.sendMail({
+      from: `"FEM Bank" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: 'FEM Bank — Your One Time Passcode',
+      html: `
+        <div style="background:#0A0A0A;padding:40px;font-family:monospace;color:#FFD700;">
+          <h1 style="color:#FFD700;letter-spacing:4px;">🏦 FEM BANK</h1>
+          <hr style="border-color:#FFD700;"/>
+          <p style="color:#00A86B;">Dear ${name},</p>
+          <p style="color:#ffffff;">Your One Time Passcode for account registration is:</p>
+          <div style="background:#0B3D2E;border:1px solid #FFD700;padding:30px;margin:20px 0;text-align:center;">
+            <h1 style="color:#FFD700;font-size:48px;letter-spacing:8px;">${otp}</h1>
+            <p style="color:#444;font-size:12px;">This code expires in 10 minutes</p>
+          </div>
+          <p style="color:#FF4444;">Never share this code with anyone including FEM Bank staff.</p>
+          <hr style="border-color:#333;"/>
+          <p style="color:#333;font-size:12px;">FEM BANK © 2026</p>
+        </div>
+      `
+    });
+    console.log('✅ OTP email sent to:', email);
+  } catch (error) {
+    console.log('❌ OTP email failed:', error.message);
+  }
+};
+
 const sendDebitEmail = async (email, name, amount, toAccount, reference) => {
   try {
     await transporter.sendMail({
@@ -127,6 +155,7 @@ const sendForgotPasswordEmail = async (email, name, newPassword) => {
 
 module.exports = {
   sendWelcomeEmail,
+  sendOTPEmail,
   sendDebitEmail,
   sendCreditEmail,
   sendForgotPasswordEmail
