@@ -16,7 +16,6 @@ const getNibbsToken = async () => {
   return res.data.token;
 };
 
-// @route  POST /api/transfer
 router.post('/', protect, async (req, res) => {
   try {
     const { toAccount, amount } = req.body;
@@ -43,19 +42,14 @@ router.post('/', protect, async (req, res) => {
 
     const { reference, status } = transferRes.data;
 
-    // Update sender balance
-    await Customer.findByIdAndUpdate(req.customer._id, {
-      $inc: { balance: -amount }
-    });
+    await Customer.findByIdAndUpdate(req.customer._id, { $inc: { balance: -amount } });
 
-    // Update receiver balance if in our bank
     const receiver = await Customer.findOneAndUpdate(
       { accountNumber: toAccount },
       { $inc: { balance: amount } },
       { new: true }
     );
 
-    // Save transaction
     await Transaction.create({
       reference,
       senderAccount: req.customer.accountNumber,
@@ -65,44 +59,20 @@ router.post('/', protect, async (req, res) => {
       customerId: req.customer._id
     });
 
-    // Send debit email
-    await sendDebitEmail(
-      req.customer.email,
-      req.customer.accountName,
-      amount,
-      toAccount,
-      reference
-    );
+    await sendDebitEmail(req.customer.email, req.customer.accountName, amount, toAccount, reference);
 
-    // Send credit email to receiver if in our bank
     if (receiver) {
-      await sendCreditEmail(
-        receiver.email,
-        receiver.accountName,
-        amount,
-        req.customer.accountNumber,
-        reference
-      );
+      await sendCreditEmail(receiver.email, receiver.accountName, amount, req.customer.accountNumber, reference);
     }
 
-    res.json({
-      message: 'Transfer successful',
-      reference,
-      amount,
-      from: req.customer.accountNumber,
-      to: toAccount,
-      status
-    });
+    res.json({ message: 'Transfer successful', reference, amount, from: req.customer.accountNumber, to: toAccount, status });
 
   } catch (error) {
     console.log('Transfer error:', error.response?.data || error.message);
-    res.status(500).json({
-      message: error.response?.data?.message || 'Transfer failed'
-    });
+    res.status(500).json({ message: error.response?.data?.message || 'Transfer failed' });
   }
 });
 
-// @route  GET /api/transfer/:reference
 router.get('/:reference', protect, async (req, res) => {
   try {
     const nibbsToken = await getNibbsToken();
